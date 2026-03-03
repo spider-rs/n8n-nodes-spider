@@ -1,5 +1,5 @@
 {
-	"name": "n8n-nodes-spider",
+	"name": "@spider-cloud/n8n-nodes-spider",
 	"version": "1.0.0",
 	"description": "n8n community node for Spider – the fastest web crawling and scraping API for AI agents",
 	"keywords": [
@@ -8,11 +8,12 @@
 	"license": "MIT",
 	"homepage": "https://spider.cloud",
 	"author": {
-		"name": "William Espegren"
+		"name": "William Espegren",
+		"email": "espegren.w@gmail.com"
 	},
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/WilliamEspegren/n8n-nodes-spider.git"
+		"url": "https://github.com/spider-rs/n8n-nodes-spider.git"
 	},
 	"scripts": {
 		"build": "n8n-node build",
@@ -45,5 +46,8 @@
 	},
 	"peerDependencies": {
 		"n8n-workflow": "*"
+	},
+	"publishConfig": {
+		"access": "public"
 	}
 }
