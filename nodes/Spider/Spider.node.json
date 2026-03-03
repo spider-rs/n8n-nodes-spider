@@ -1,0 +1,14 @@
+{
+	"node": "n8n-nodes-spider.spider",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["AI", "Data & Storage"],
+	"resources": {
+		"credentialDocumentation": [
+			{ "url": "https://spider.cloud/api-keys" }
+		],
+		"primaryDocumentation": [
+			{ "url": "https://spider.cloud/docs/api" }
+		]
+	}
+}
