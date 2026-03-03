@@ -7,8 +7,6 @@ import type {
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
-const SPIDER_BASE_URL = 'https://api.spider.cloud';
-
 export class Spider implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Spider',
@@ -30,9 +28,15 @@ export class Spider implements INodeType {
 				required: true,
 			},
 		],
+		requestDefaults: {
+			baseURL: 'https://api.spider.cloud',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+		},
 		properties: [
 			// ─── Operation ───────────────────────────────────────────────────────────
-			// eslint-disable-next-line @n8n/community-nodes/resource-operation-pattern
 			{
 				displayName: 'Operation',
 				name: 'operation',
@@ -281,22 +285,15 @@ export class Spider implements INodeType {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
 
-		const credentials = await this.getCredentials('spiderApi');
-		const authHeaders = {
-			Authorization: `Bearer ${credentials.apiKey as string}`,
-			'Content-Type': 'application/json',
-		};
-
 		for (let i = 0; i < items.length; i++) {
 			const operation = this.getNodeParameter('operation', i) as string;
 
 			try {
 				// ── Get Credits ────────────────────────────────────────────────────
 				if (operation === 'credits') {
-					const response = (await this.helpers.httpRequest({
+					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
 						method: 'GET',
-						url: `${SPIDER_BASE_URL}/data/credits`,
-						headers: authHeaders,
+						url: '/data/credits',
 						json: true,
 					})) as IDataObject;
 
@@ -325,10 +322,9 @@ export class Spider implements INodeType {
 					if (additionalFields.proxy_enabled !== undefined)
 						body.proxy_enabled = additionalFields.proxy_enabled;
 
-					const response = (await this.helpers.httpRequest({
+					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
 						method: 'POST',
-						url: `${SPIDER_BASE_URL}/search`,
-						headers: authHeaders,
+						url: '/search',
 						body,
 						json: true,
 					})) as IDataObject[];
@@ -369,10 +365,9 @@ export class Spider implements INodeType {
 					body.return_format = returnFormat;
 					if (additionalFields.depth !== undefined) body.depth = additionalFields.depth;
 
-					const response = (await this.helpers.httpRequest({
+					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
 						method: 'POST',
-						url: `${SPIDER_BASE_URL}/crawl`,
-						headers: authHeaders,
+						url: '/crawl',
 						body,
 						json: true,
 					})) as IDataObject[];
@@ -392,10 +387,9 @@ export class Spider implements INodeType {
 					const returnFormat = this.getNodeParameter('returnFormat', i) as string;
 					body.return_format = returnFormat;
 
-					const response = (await this.helpers.httpRequest({
+					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
 						method: 'POST',
-						url: `${SPIDER_BASE_URL}/scrape`,
-						headers: authHeaders,
+						url: '/scrape',
 						body,
 						json: true,
 					})) as IDataObject[];
@@ -412,10 +406,9 @@ export class Spider implements INodeType {
 
 					if (additionalFields.depth !== undefined) body.depth = additionalFields.depth;
 
-					const response = (await this.helpers.httpRequest({
+					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
 						method: 'POST',
-						url: `${SPIDER_BASE_URL}/links`,
-						headers: authHeaders,
+						url: '/links',
 						body,
 						json: true,
 					})) as IDataObject[];
@@ -432,10 +425,9 @@ export class Spider implements INodeType {
 
 					// ── Screenshot ─────────────────────────────────────────────────
 				} else if (operation === 'screenshot') {
-					const response = (await this.helpers.httpRequest({
+					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
 						method: 'POST',
-						url: `${SPIDER_BASE_URL}/screenshot`,
-						headers: authHeaders,
+						url: '/screenshot',
 						body,
 						json: true,
 					})) as IDataObject[];
@@ -451,10 +443,9 @@ export class Spider implements INodeType {
 					const returnFormat = this.getNodeParameter('returnFormat', i) as string;
 					body.return_format = returnFormat;
 
-					const response = (await this.helpers.httpRequest({
+					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
 						method: 'POST',
-						url: `${SPIDER_BASE_URL}/transform`,
-						headers: authHeaders,
+						url: '/transform',
 						body,
 						json: true,
 					})) as IDataObject[];

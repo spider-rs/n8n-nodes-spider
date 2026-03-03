@@ -14,10 +14,9 @@
 		"type": "git",
 		"url": "https://github.com/WilliamEspegren/n8n-nodes-spider.git"
 	},
-	"main": "index.js",
 	"scripts": {
 		"build": "n8n-node build",
-		"build:watch": "n8n-node build --watch",
+		"build:watch": "tsc --watch",
 		"dev": "n8n-node dev",
 		"lint": "n8n-node lint",
 		"lint:fix": "n8n-node lint --fix",
