@@ -284,6 +284,7 @@ export class Spider implements INodeType {
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
+		const baseURL = 'https://api.spider.cloud';
 
 		for (let i = 0; i < items.length; i++) {
 			const operation = this.getNodeParameter('operation', i) as string;
@@ -293,6 +294,7 @@ export class Spider implements INodeType {
 				if (operation === 'credits') {
 					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
 						method: 'GET',
+						baseURL,
 						url: '/data/credits',
 						json: true,
 					})) as IDataObject;
@@ -324,6 +326,7 @@ export class Spider implements INodeType {
 
 					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
 						method: 'POST',
+						baseURL,
 						url: '/search',
 						body,
 						json: true,
@@ -367,6 +370,7 @@ export class Spider implements INodeType {
 
 					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
 						method: 'POST',
+						baseURL,
 						url: '/crawl',
 						body,
 						json: true,
@@ -389,6 +393,7 @@ export class Spider implements INodeType {
 
 					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
 						method: 'POST',
+						baseURL,
 						url: '/scrape',
 						body,
 						json: true,
@@ -408,6 +413,7 @@ export class Spider implements INodeType {
 
 					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
 						method: 'POST',
+						baseURL,
 						url: '/links',
 						body,
 						json: true,
@@ -427,6 +433,7 @@ export class Spider implements INodeType {
 				} else if (operation === 'screenshot') {
 					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
 						method: 'POST',
+						baseURL,
 						url: '/screenshot',
 						body,
 						json: true,
@@ -445,6 +452,7 @@ export class Spider implements INodeType {
 
 					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
 						method: 'POST',
+						baseURL,
 						url: '/transform',
 						body,
 						json: true,
