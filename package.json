@@ -1,6 +1,6 @@
 {
 	"name": "@spider-cloud/n8n-nodes-spider",
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"description": "n8n community node for Spider – the fastest web crawling and scraping API for AI agents",
 	"keywords": [
 		"n8n-community-node-package"
