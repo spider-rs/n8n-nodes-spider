@@ -1,0 +1,249 @@
+{
+	"name": "Crawl a docs site into a vector store and chat with it using Spider",
+	"nodes": [
+		{
+			"parameters": {
+				"content": "## Crawl docs into a vector store\n1. Add a Spider API credential (key from https://spider.cloud/api-keys).\n2. Add an OpenAI credential to both OpenAI nodes.\n3. Set the start URL and the 'Include Paths Only' field on **Crawl docs**.\n4. Run the top row once to fill the store, then open the chat.\n\nThe crawl stops at 'Page Limit' pages, so raise it for a larger site.",
+				"width": 520,
+				"height": 260
+			},
+			"name": "Setup",
+			"type": "n8n-nodes-base.stickyNote",
+			"typeVersion": 1,
+			"position": [-60, -260]
+		},
+		{
+			"parameters": {},
+			"name": "Run crawl",
+			"type": "n8n-nodes-base.manualTrigger",
+			"typeVersion": 1,
+			"position": [0, 100]
+		},
+		{
+			"parameters": {
+				"resource": "website",
+				"operation": "crawl",
+				"url": "https://docs.n8n.io",
+				"limit": 100,
+				"returnFormat": "markdown",
+				"outputMode": "splitItems",
+				"additionalFields": {
+					"whitelist": "/integrations/",
+					"filter_output_main_only": true,
+					"readability": true
+				}
+			},
+			"name": "Crawl docs",
+			"type": "@spider-cloud/n8n-nodes-spider.spider",
+			"typeVersion": 2,
+			"position": [220, 100]
+		},
+		{
+			"parameters": {
+				"mode": "insert",
+				"memoryKey": "docs"
+			},
+			"name": "Store pages",
+			"type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+			"typeVersion": 1.1,
+			"position": [460, 100]
+		},
+		{
+			"parameters": {
+				"jsonMode": "expressionData",
+				"jsonData": "={{ $json.content }}",
+				"options": {
+					"metadata": {
+						"metadataValues": [
+							{
+								"name": "url",
+								"value": "={{ $json.url }}"
+							}
+						]
+					}
+				}
+			},
+			"name": "Load page markdown",
+			"type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+			"typeVersion": 1,
+			"position": [560, 320]
+		},
+		{
+			"parameters": {
+				"chunkSize": 1500,
+				"chunkOverlap": 150,
+				"options": {}
+			},
+			"name": "Split into chunks",
+			"type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+			"typeVersion": 1,
+			"position": [660, 520]
+		},
+		{
+			"parameters": {
+				"options": {}
+			},
+			"name": "Embeddings",
+			"type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+			"typeVersion": 1,
+			"position": [400, 320]
+		},
+		{
+			"parameters": {
+				"options": {}
+			},
+			"name": "Chat",
+			"type": "@n8n/n8n-nodes-langchain.chatTrigger",
+			"typeVersion": 1.1,
+			"position": [0, 760]
+		},
+		{
+			"parameters": {
+				"options": {
+					"systemMessage": "Answer questions about the documentation. Search the docs store first and cite the page URL for each fact. If the store has no answer, say so."
+				}
+			},
+			"name": "Docs agent",
+			"type": "@n8n/n8n-nodes-langchain.agent",
+			"typeVersion": 1.7,
+			"position": [240, 760]
+		},
+		{
+			"parameters": {
+				"model": "gpt-4o-mini",
+				"options": {}
+			},
+			"name": "Chat model",
+			"type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+			"typeVersion": 1,
+			"position": [180, 980]
+		},
+		{
+			"parameters": {
+				"mode": "retrieve-as-tool",
+				"toolName": "search_docs",
+				"toolDescription": "Search the crawled documentation pages",
+				"memoryKey": "docs",
+				"topK": 5
+			},
+			"name": "Search docs",
+			"type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+			"typeVersion": 1.1,
+			"position": [440, 980]
+		},
+		{
+			"parameters": {
+				"options": {}
+			},
+			"name": "Embeddings for search",
+			"type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+			"typeVersion": 1,
+			"position": [460, 1180]
+		}
+	],
+	"connections": {
+		"Run crawl": {
+			"main": [
+				[
+					{
+						"node": "Crawl docs",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Crawl docs": {
+			"main": [
+				[
+					{
+						"node": "Store pages",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Load page markdown": {
+			"ai_document": [
+				[
+					{
+						"node": "Store pages",
+						"type": "ai_document",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Split into chunks": {
+			"ai_textSplitter": [
+				[
+					{
+						"node": "Load page markdown",
+						"type": "ai_textSplitter",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Embeddings": {
+			"ai_embedding": [
+				[
+					{
+						"node": "Store pages",
+						"type": "ai_embedding",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Chat": {
+			"main": [
+				[
+					{
+						"node": "Docs agent",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Chat model": {
+			"ai_languageModel": [
+				[
+					{
+						"node": "Docs agent",
+						"type": "ai_languageModel",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Search docs": {
+			"ai_tool": [
+				[
+					{
+						"node": "Docs agent",
+						"type": "ai_tool",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Embeddings for search": {
+			"ai_embedding": [
+				[
+					{
+						"node": "Search docs",
+						"type": "ai_embedding",
+						"index": 0
+					}
+				]
+			]
+		}
+	},
+	"settings": {
+		"executionOrder": "v1"
+	},
+	"pinData": {}
+}

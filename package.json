@@ -1,12 +1,23 @@
 {
 	"name": "@spider-cloud/n8n-nodes-spider",
 	"version": "1.0.5",
-	"description": "n8n community node for Spider – the fastest web crawling and scraping API for AI agents",
+	"description": "n8n community node for Spider: scrape, crawl and search the web as markdown for AI agents and workflows",
 	"keywords": [
-		"n8n-community-node-package"
+		"n8n-community-node-package",
+		"n8n",
+		"spider",
+		"web-scraping",
+		"web-crawler",
+		"scraper",
+		"crawler",
+		"markdown",
+		"search",
+		"screenshot",
+		"ai-agent",
+		"rag"
 	],
 	"license": "MIT",
-	"homepage": "https://spider.cloud",
+	"homepage": "https://github.com/spider-rs/n8n-nodes-spider#readme",
 	"author": {
 		"name": "William Espegren",
 		"email": "espegren.w@gmail.com"
@@ -22,7 +33,8 @@
 		"lint": "n8n-node lint",
 		"lint:fix": "n8n-node lint --fix",
 		"release": "n8n-node release",
-		"prepublishOnly": "n8n-node prerelease"
+		"prepublishOnly": "n8n-node prerelease",
+		"test": "n8n-node build && node --test test/node.test.cjs"
 	},
 	"files": [
 		"dist"
@@ -38,16 +50,19 @@
 		]
 	},
 	"devDependencies": {
-		"@n8n/node-cli": "*",
-		"typescript": "^5.3.3",
+		"@n8n/node-cli": "^0.56.1",
 		"eslint": "^9.0.0",
 		"prettier": "^3.2.5",
-		"release-it": "^17.1.1"
+		"release-it": "^17.1.1",
+		"typescript": "^5.3.3"
 	},
 	"peerDependencies": {
 		"n8n-workflow": "*"
 	},
 	"publishConfig": {
 		"access": "public"
+	},
+	"bugs": {
+		"url": "https://github.com/spider-rs/n8n-nodes-spider/issues"
 	}
 }

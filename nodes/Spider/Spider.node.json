@@ -1,10 +1,21 @@
 {
-	"node": "n8n-nodes-spider.spider",
-	"nodeVersion": "1.0",
+	"node": "@spider-cloud/n8n-nodes-spider.spider",
+	"nodeVersion": "2.0",
 	"codexVersion": "1.0",
 	"categories": ["Data & Storage", "Marketing & Content", "Sales", "Analytics", "Utility"],
 	"resources": {
-		"credentialDocumentation": [{ "url": "https://spider.cloud/api-keys" }],
-		"primaryDocumentation": [{ "url": "https://spider.cloud/docs/api" }]
+		"credentialDocumentation": [
+			{
+				"url": "https://spider.cloud/api-keys/"
+			}
+		],
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/spider-rs/n8n-nodes-spider#readme"
+			},
+			{
+				"url": "https://spider.cloud/docs/api/"
+			}
+		]
 	}
 }
