@@ -1,22 +1,206 @@
 import type {
 	IDataObject,
 	IExecuteFunctions,
+	IHttpRequestOptions,
 	INodeExecutionData,
+	INodeProperties,
 	INodeType,
 	INodeTypeDescription,
 	JsonObject,
 } from 'n8n-workflow';
-import { NodeApiError, NodeConnectionTypes } from 'n8n-workflow';
+import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
+
+const BASE_URL = 'https://api.spider.cloud';
+
+// Version 1 had one flat operation list. Version 2 groups the same operations
+// under resources. Both versions share the operation values, so every other
+// parameter and the execute code work for either version.
+const v1OperationProperty: INodeProperties = {
+	displayName: 'Operation',
+	name: 'operation',
+	type: 'options',
+	noDataExpression: true,
+	default: 'scrape',
+	displayOptions: { show: { '@version': [1] } },
+	options: [
+		{ name: 'Crawl', value: 'crawl', action: 'Crawl a website' },
+		{ name: 'Get Credits', value: 'credits', action: 'Get API credits' },
+		{ name: 'Links', value: 'links', action: 'Extract links from a page' },
+		{ name: 'Scrape', value: 'scrape', action: 'Scrape a page' },
+		{ name: 'Screenshot', value: 'screenshot', action: 'Screenshot a page' },
+		{ name: 'Search', value: 'search', action: 'Search the web' },
+		{ name: 'Transform', value: 'transform', action: 'Transform page content' },
+	],
+};
+
+const resourceProperty: INodeProperties = {
+	displayName: 'Resource',
+	name: 'resource',
+	type: 'options',
+	noDataExpression: true,
+	default: 'page',
+	displayOptions: { show: { '@version': [2] } },
+	options: [
+		{ name: 'Account', value: 'account' },
+		{ name: 'Page', value: 'page' },
+		{ name: 'Web', value: 'web' },
+		{ name: 'Website', value: 'website' },
+	],
+};
+
+const v2OperationProperties: INodeProperties[] = [
+	{
+		displayName: 'Operation',
+		name: 'operation',
+		type: 'options',
+		noDataExpression: true,
+		default: 'scrape',
+		displayOptions: { show: { '@version': [2], resource: ['page'] } },
+		options: [
+			{
+				name: 'Scrape',
+				value: 'scrape',
+				description: 'Fetch one page and return its content',
+				action: 'Scrape a page',
+			},
+			{
+				name: 'Screenshot',
+				value: 'screenshot',
+				description: 'Render a page in a browser and return an image',
+				action: 'Screenshot a page',
+			},
+			{
+				name: 'Transform',
+				value: 'transform',
+				description: 'Convert HTML you already have to markdown or text, without fetching',
+				action: 'Transform HTML',
+			},
+		],
+	},
+	{
+		displayName: 'Operation',
+		name: 'operation',
+		type: 'options',
+		noDataExpression: true,
+		default: 'crawl',
+		displayOptions: { show: { '@version': [2], resource: ['website'] } },
+		options: [
+			{
+				name: 'Crawl',
+				value: 'crawl',
+				description: 'Follow links from a start URL and return the content of each page',
+				action: 'Crawl a website',
+			},
+			{
+				name: 'Get Links',
+				value: 'links',
+				description: 'Follow links from a start URL and return the URLs only, without content',
+				action: 'Get links from a website',
+			},
+		],
+	},
+	{
+		displayName: 'Operation',
+		name: 'operation',
+		type: 'options',
+		noDataExpression: true,
+		default: 'search',
+		displayOptions: { show: { '@version': [2], resource: ['web'] } },
+		options: [
+			{
+				name: 'Search',
+				value: 'search',
+				description: 'Search the web and optionally fetch the content of each result',
+				action: 'Search the web',
+			},
+		],
+	},
+	{
+		displayName: 'Operation',
+		name: 'operation',
+		type: 'options',
+		noDataExpression: true,
+		default: 'credits',
+		displayOptions: { show: { '@version': [2], resource: ['account'] } },
+		options: [
+			{
+				name: 'Get Credits',
+				value: 'credits',
+				description: 'Return the remaining credit balance',
+				action: 'Get credit balance',
+			},
+		],
+	},
+];
+
+const RETURN_FORMATS = [
+	{
+		name: 'Markdown',
+		value: 'markdown',
+		description: 'Markdown, the usual choice for LLM input',
+	},
+	{
+		name: 'CommonMark',
+		value: 'commonmark',
+		description: 'Strict CommonMark markdown',
+	},
+	{
+		name: 'Plain Text',
+		value: 'text',
+		description: 'Text with the markup removed',
+	},
+	{
+		name: 'Raw HTML',
+		value: 'raw',
+		description: 'The page HTML as the server sent it',
+	},
+	{
+		name: 'XML',
+		value: 'xml',
+		description: 'The page as XML',
+	},
+];
+
+function toApiReturnFormat(value: string): string {
+	// Version 1 offered "html", which the API does not know. It means raw HTML.
+	return value === 'html' ? 'raw' : value;
+}
+
+function applyFetchOptions(body: IDataObject, fields: IDataObject): void {
+	if (fields.request !== undefined) body.request = fields.request;
+	if (fields.stealth !== undefined) body.stealth = fields.stealth;
+	if (fields.readability !== undefined) body.readability = fields.readability;
+	if (fields.metadata !== undefined) body.metadata = fields.metadata;
+	if (fields.country_code) body.country_code = fields.country_code;
+	if (fields.root_selector) body.root_selector = fields.root_selector;
+	if (fields.filter_output_main_only !== undefined)
+		body.filter_output_main_only = fields.filter_output_main_only;
+	if (fields.request_timeout !== undefined) body.request_timeout = fields.request_timeout;
+
+	// Fields kept from version 1 workflows. The API ignores anti_bot and
+	// proxy_enabled, so map them to the settings that do the job today.
+	if (fields.headless === true && body.request === undefined) body.request = 'browser';
+	if (fields.anti_bot === true && body.stealth === undefined) body.stealth = true;
+}
+
+function splitPatterns(value: unknown): string[] {
+	if (typeof value !== 'string') return [];
+	return value
+		.split(',')
+		.map((pattern) => pattern.trim())
+		.filter((pattern) => pattern.length > 0);
+}
 
 export class Spider implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Spider',
 		name: 'spider',
-		icon: 'file:spider.svg',
+		icon: { light: 'file:spider.svg', dark: 'file:spider.dark.svg' },
 		group: ['transform'],
-		version: 1,
+		version: [1, 2],
+		defaultVersion: 2,
 		subtitle: '={{$parameter["operation"]}}',
-		description: 'Crawl and scrape websites using the Spider API',
+		description: 'Scrape, crawl and search the web with the Spider API',
 		defaults: {
 			name: 'Spider',
 		},
@@ -30,76 +214,70 @@ export class Spider implements INodeType {
 			},
 		],
 		properties: [
-			// ─── Operation ───────────────────────────────────────────────────────────
-			{
-				displayName: 'Operation',
-				name: 'operation',
-				type: 'options',
-				noDataExpression: true,
-				default: 'scrape',
-				options: [
-					{
-						name: 'Crawl',
-						value: 'crawl',
-						description: 'Crawl a website and extract content from multiple pages',
-						action: 'Crawl a website',
-					},
-					{
-						name: 'Get Credits',
-						value: 'credits',
-						description: 'Check available API credits',
-						action: 'Get API credits',
-					},
-					{
-						name: 'Links',
-						value: 'links',
-						description: 'Extract all links from a page',
-						action: 'Extract links from a page',
-					},
-					{
-						name: 'Scrape',
-						value: 'scrape',
-						description: 'Scrape content from a single page',
-						action: 'Scrape a page',
-					},
-					{
-						name: 'Screenshot',
-						value: 'screenshot',
-						description: 'Capture a screenshot of a page',
-						action: 'Screenshot a page',
-					},
-					{
-						name: 'Search',
-						value: 'search',
-						description: 'Search the web and optionally retrieve page content',
-						action: 'Search the web',
-					},
-					{
-						name: 'Transform',
-						value: 'transform',
-						description: 'Fetch a URL and convert its content to another format',
-						action: 'Transform page content',
-					},
-				],
-			},
+			resourceProperty,
+			v1OperationProperty,
+			...v2OperationProperties,
 
-			// ─── URL (crawl, scrape, links, screenshot, transform) ────────────────
 			{
 				displayName: 'URL',
 				name: 'url',
 				type: 'string',
 				default: '',
 				required: true,
-				placeholder: 'https://example.com',
-				description: 'The URL to process',
+				placeholder: 'e.g. https://example.com',
+				description: 'The page to fetch, or the start page of the crawl',
 				displayOptions: {
 					show: {
-						operation: ['crawl', 'scrape', 'links', 'screenshot', 'transform'],
+						operation: ['crawl', 'scrape', 'links', 'screenshot'],
+					},
+				},
+			},
+			{
+				displayName: 'URL',
+				name: 'url',
+				type: 'string',
+				default: '',
+				required: true,
+				placeholder: 'e.g. https://example.com',
+				description: 'The page to fetch and convert',
+				displayOptions: {
+					show: {
+						'@version': [1],
+						operation: ['transform'],
+					},
+				},
+			},
+			{
+				displayName: 'HTML',
+				name: 'html',
+				type: 'string',
+				typeOptions: { rows: 4 },
+				default: '',
+				required: true,
+				placeholder: 'e.g. <html><body><h1>Hello</h1></body></html>',
+				description: 'The HTML to convert. Spider fetches nothing for this operation.',
+				displayOptions: {
+					show: {
+						'@version': [2],
+						operation: ['transform'],
+					},
+				},
+			},
+			{
+				displayName: 'Source URL',
+				name: 'sourceUrl',
+				type: 'string',
+				default: '',
+				placeholder: 'e.g. https://example.com/article',
+				description: 'Where the HTML came from. Readability mode uses it to resolve the page.',
+				displayOptions: {
+					show: {
+						'@version': [2],
+						operation: ['transform'],
 					},
 				},
 			},
 
-			// ─── Search query ─────────────────────────────────────────────────────
 			{
 				displayName: 'Query',
 				name: 'query',
@@ -107,7 +285,7 @@ export class Spider implements INodeType {
 				default: '',
 				required: true,
 				placeholder: 'e.g. latest AI research papers',
-				description: 'The search query',
+				description: 'What to search the web for',
 				displayOptions: {
 					show: {
 						operation: ['search'],
@@ -115,7 +293,6 @@ export class Spider implements INodeType {
 				},
 			},
 
-			// ─── Crawl: page limit ────────────────────────────────────────────────
 			{
 				displayName: 'Page Limit',
 				name: 'limit',
@@ -130,13 +307,12 @@ export class Spider implements INodeType {
 				},
 			},
 
-			// ─── Search: result count ─────────────────────────────────────────────
 			{
 				displayName: 'Number of Results',
 				name: 'num',
 				type: 'number',
 				default: 5,
-				description: 'Number of search results to return',
+				description: 'Maximum number of search results to return',
 				typeOptions: { minValue: 1 },
 				displayOptions: {
 					show: {
@@ -145,35 +321,13 @@ export class Spider implements INodeType {
 				},
 			},
 
-			// ─── Return format ────────────────────────────────────────────────────
 			{
 				displayName: 'Return Format',
 				name: 'returnFormat',
 				type: 'options',
 				default: 'markdown',
-				description: 'Format of the extracted content',
-				options: [
-					{
-						name: 'Markdown',
-						value: 'markdown',
-						description: 'Clean markdown — best for LLMs and RAG pipelines',
-					},
-					{
-						name: 'HTML',
-						value: 'html',
-						description: 'Raw HTML content',
-					},
-					{
-						name: 'Plain Text',
-						value: 'text',
-						description: 'Plain text without markup',
-					},
-					{
-						name: 'XML',
-						value: 'xml',
-						description: 'XML format',
-					},
-				],
+				description: 'Format of the page content in the output',
+				options: RETURN_FORMATS,
 				displayOptions: {
 					show: {
 						operation: ['crawl', 'scrape', 'search', 'transform'],
@@ -181,23 +335,22 @@ export class Spider implements INodeType {
 				},
 			},
 
-			// ─── Output mode ──────────────────────────────────────────────────────
 			{
 				displayName: 'Output Mode',
 				name: 'outputMode',
 				type: 'options',
 				default: 'splitItems',
-				description: 'How to return multi-page results',
+				description: 'How to return results that contain several pages',
 				options: [
 					{
 						name: 'One Item per Page',
 						value: 'splitItems',
-						description: 'Each page / result becomes a separate n8n item',
+						description: 'Each page or result becomes its own n8n item',
 					},
 					{
 						name: 'All Pages in One Item',
 						value: 'allItems',
-						description: 'Return all pages as an array in a single item',
+						description: 'Return every page as an array in a single item',
 					},
 				],
 				displayOptions: {
@@ -207,7 +360,6 @@ export class Spider implements INodeType {
 				},
 			},
 
-			// ─── Additional fields ────────────────────────────────────────────────
 			{
 				displayName: 'Additional Fields',
 				name: 'additionalFields',
@@ -221,54 +373,138 @@ export class Spider implements INodeType {
 				},
 				options: [
 					{
-						displayName: 'Anti-Bot Protection',
+						displayName: 'Anti-Bot Protection (Legacy)',
 						name: 'anti_bot',
 						type: 'boolean',
 						default: false,
-						description: 'Whether to enable anti-bot bypass for protected pages',
+						description: 'Whether to turn on stealth mode. Kept for version 1 workflows.',
+						displayOptions: { show: { '@version': [1] } },
+					},
+					{
+						displayName: 'Country Code',
+						name: 'country_code',
+						type: 'string',
+						default: '',
+						placeholder: 'e.g. gb',
+						description: 'Two letter country code for the proxy exit',
+						displayOptions: { hide: { '/operation': ['transform'] } },
 					},
 					{
 						displayName: 'Crawl Depth',
 						name: 'depth',
 						type: 'number',
-						default: 1,
-						description: 'Maximum depth to follow links from the starting URL',
+						default: 25,
+						description:
+							'Maximum number of links to follow away from the start URL. 0 removes the limit.',
+						displayOptions: { show: { '/operation': ['crawl', 'links'] } },
 					},
 					{
-						displayName: 'Enable Proxy',
-						name: 'proxy_enabled',
-						type: 'boolean',
-						default: false,
-						description: 'Whether to route requests through rotating proxies',
+						displayName: 'Exclude Paths',
+						name: 'blacklist',
+						type: 'string',
+						default: '',
+						placeholder: 'e.g. /blog/, /tag/',
+						description: 'Comma-separated paths to skip. Regex is supported.',
+						displayOptions: { show: { '/operation': ['crawl', 'links'] } },
+					},
+					{
+						displayName: 'Fetch Mode',
+						name: 'request',
+						type: 'options',
+						default: 'smart',
+						description:
+							'How Spider fetches the page. Smart tries a plain HTTP request first and uses a browser only when the page needs one.',
+						options: [
+							{ name: 'Smart', value: 'smart' },
+							{ name: 'HTTP Only', value: 'http' },
+							{ name: 'Browser', value: 'browser' },
+						],
+						displayOptions: { hide: { '/operation': ['transform'] } },
 					},
 					{
 						displayName: 'Fetch Page Content',
 						name: 'fetch_page_content',
 						type: 'boolean',
 						default: false,
-						description: 'Whether to retrieve the full page content for each search result',
+						description: 'Whether to fetch the content of each search result',
+						displayOptions: { show: { '/operation': ['search'] } },
 					},
 					{
-						displayName: 'Headless Browser',
+						displayName: 'Full Page',
+						name: 'full_page',
+						type: 'boolean',
+						default: true,
+						description: 'Whether to capture the whole page instead of the visible viewport',
+						displayOptions: { show: { '/operation': ['screenshot'] } },
+					},
+					{
+						displayName: 'Headless Browser (Legacy)',
 						name: 'headless',
 						type: 'boolean',
 						default: false,
-						description:
-							'Whether to render JavaScript using a headless browser (slower but handles dynamic pages)',
+						description: 'Whether to fetch with a browser. Kept for version 1 workflows.',
+						displayOptions: { show: { '@version': [1] } },
 					},
 					{
 						displayName: 'Include Metadata',
 						name: 'metadata',
 						type: 'boolean',
 						default: false,
-						description: 'Whether to include page metadata (title, description, etc.) in the response',
+						description: 'Whether to add the title, description and keywords of each page',
+						displayOptions: { hide: { '/operation': ['transform'] } },
+					},
+					{
+						displayName: 'Include Paths Only',
+						name: 'whitelist',
+						type: 'string',
+						default: '',
+						placeholder: 'e.g. /docs/',
+						description:
+							'Comma-separated paths to crawl. Spider skips every other path. Regex is supported.',
+						displayOptions: { show: { '/operation': ['crawl', 'links'] } },
+					},
+					{
+						displayName: 'Main Content Only',
+						name: 'filter_output_main_only',
+						type: 'boolean',
+						default: false,
+						description: 'Whether to drop navigation, sidebars and footers from the output',
+						displayOptions: { hide: { '/operation': ['transform', 'screenshot'] } },
 					},
 					{
 						displayName: 'Readability Mode',
 						name: 'readability',
 						type: 'boolean',
 						default: false,
-						description: 'Whether to apply readability processing to extract the main article content',
+						description:
+							'Whether to strip boilerplate and keep the main article text before converting',
+					},
+					{
+						displayName: 'Request Timeout',
+						name: 'request_timeout',
+						type: 'number',
+						default: 60,
+						typeOptions: { minValue: 5, maxValue: 255 },
+						description: 'Seconds to wait for each page, from 5 to 255',
+						displayOptions: { hide: { '/operation': ['transform'] } },
+					},
+					{
+						displayName: 'Root Selector',
+						name: 'root_selector',
+						type: 'string',
+						default: '',
+						placeholder: 'e.g. #content',
+						description: 'CSS selector of the part of the page to keep',
+						displayOptions: { hide: { '/operation': ['transform', 'screenshot'] } },
+					},
+					{
+						displayName: 'Stealth',
+						name: 'stealth',
+						type: 'boolean',
+						default: false,
+						description:
+							'Whether to use stealth mode for pages that refuse plain requests or show a challenge page. Costs more per page.',
+						displayOptions: { hide: { '/operation': ['transform'] } },
 					},
 				],
 			},
@@ -278,185 +514,130 @@ export class Spider implements INodeType {
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
-		const baseURL = 'https://api.spider.cloud';
+		const nodeVersion = this.getNode().typeVersion;
+
+		const call = async (options: Omit<IHttpRequestOptions, 'baseURL' | 'json'>) =>
+			(await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
+				baseURL: BASE_URL,
+				json: true,
+				...options,
+			})) as IDataObject | IDataObject[];
+
+		const pushResults = (results: IDataObject[], outputMode: string, key: string, i: number) => {
+			if (outputMode === 'splitItems') {
+				for (const result of results) {
+					returnData.push({ json: result, pairedItem: { item: i } });
+				}
+			} else {
+				returnData.push({ json: { [key]: results }, pairedItem: { item: i } });
+			}
+		};
 
 		for (let i = 0; i < items.length; i++) {
 			const operation = this.getNodeParameter('operation', i) as string;
 
-			try {
-				// ── Get Credits ────────────────────────────────────────────────────
-				if (operation === 'credits') {
-					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
-						method: 'GET',
-						baseURL,
-						url: '/data/credits',
-						json: true,
-					})) as IDataObject;
+			if (operation === 'transform' && nodeVersion >= 2 && !this.getNodeParameter('html', i)) {
+				const message =
+					"The 'HTML' field is empty. Pass the HTML to convert, for example from an earlier HTTP Request node.";
+				if (this.continueOnFail()) {
+					returnData.push({ json: { error: message }, pairedItem: { item: i } });
+					continue;
+				}
+				throw new NodeOperationError(this.getNode(), message, { itemIndex: i });
+			}
 
-					returnData.push({ json: response, pairedItem: { item: i } });
+			try {
+				if (operation === 'credits') {
+					const response = await call({ method: 'GET', url: '/data/credits' });
+					returnData.push({ json: response as IDataObject, pairedItem: { item: i } });
 					continue;
 				}
 
-				// ── Search ─────────────────────────────────────────────────────────
+				const additionalFields = this.getNodeParameter('additionalFields', i, {}) as IDataObject;
+
 				if (operation === 'search') {
-					const query = this.getNodeParameter('query', i) as string;
-					const num = this.getNodeParameter('num', i) as number;
-					const returnFormat = this.getNodeParameter('returnFormat', i) as string;
-					const outputMode = this.getNodeParameter('outputMode', i) as string;
-					const additionalFields = this.getNodeParameter('additionalFields', i) as IDataObject;
-
 					const body: IDataObject = {
-						search: query,
-						num,
-						return_format: returnFormat,
+						search: this.getNodeParameter('query', i) as string,
+						num: this.getNodeParameter('num', i) as number,
+						return_format: toApiReturnFormat(this.getNodeParameter('returnFormat', i) as string),
 					};
-
 					if (additionalFields.fetch_page_content !== undefined) {
 						body.fetch_page_content = additionalFields.fetch_page_content;
 					}
-					if (additionalFields.anti_bot !== undefined) body.anti_bot = additionalFields.anti_bot;
-					if (additionalFields.proxy_enabled !== undefined)
-						body.proxy_enabled = additionalFields.proxy_enabled;
+					applyFetchOptions(body, additionalFields);
 
-					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
-						method: 'POST',
-						baseURL,
-						url: '/search',
-						body,
-						json: true,
-					})) as IDataObject[];
-
+					const response = await call({ method: 'POST', url: '/search', body });
 					const results = Array.isArray(response) ? response : [response];
-
-					if (outputMode === 'splitItems') {
-						for (const result of results) {
-							returnData.push({ json: result as IDataObject, pairedItem: { item: i } });
-						}
-					} else {
-						returnData.push({ json: { results }, pairedItem: { item: i } });
-					}
+					pushResults(results, this.getNodeParameter('outputMode', i) as string, 'results', i);
 					continue;
 				}
 
-				// ── URL-based operations ───────────────────────────────────────────
+				if (operation === 'transform' && nodeVersion >= 2) {
+					const html = this.getNodeParameter('html', i) as string;
+					const sourceUrl = this.getNodeParameter('sourceUrl', i, '') as string;
+					const document: IDataObject = { html };
+					if (sourceUrl) document.url = sourceUrl;
+					const body: IDataObject = {
+						data: [document],
+						return_format: toApiReturnFormat(this.getNodeParameter('returnFormat', i) as string),
+					};
+					if (additionalFields.readability !== undefined)
+						body.readability = additionalFields.readability;
+
+					const response = await call({ method: 'POST', url: '/transform', body });
+					returnData.push({ json: response as IDataObject, pairedItem: { item: i } });
+					continue;
+				}
+
 				const url = this.getNodeParameter('url', i) as string;
-				const additionalFields = this.getNodeParameter('additionalFields', i) as IDataObject;
-
 				const body: IDataObject = { url };
+				applyFetchOptions(body, additionalFields);
 
-				if (additionalFields.anti_bot !== undefined) body.anti_bot = additionalFields.anti_bot;
-				if (additionalFields.proxy_enabled !== undefined)
-					body.proxy_enabled = additionalFields.proxy_enabled;
-				if (additionalFields.headless !== undefined) body.headless = additionalFields.headless;
-				if (additionalFields.readability !== undefined)
-					body.readability = additionalFields.readability;
-				if (additionalFields.metadata !== undefined) body.metadata = additionalFields.metadata;
+				if (operation === 'crawl' || operation === 'links') {
+					if (additionalFields.depth !== undefined) body.depth = additionalFields.depth;
+					const blacklist = splitPatterns(additionalFields.blacklist);
+					const whitelist = splitPatterns(additionalFields.whitelist);
+					if (blacklist.length) body.blacklist = blacklist;
+					if (whitelist.length) body.whitelist = whitelist;
+				}
 
-				// ── Crawl ──────────────────────────────────────────────────────────
 				if (operation === 'crawl') {
-					const limit = this.getNodeParameter('limit', i) as number;
-					const returnFormat = this.getNodeParameter('returnFormat', i) as string;
-					const outputMode = this.getNodeParameter('outputMode', i) as string;
-
-					body.limit = limit;
-					body.return_format = returnFormat;
-					if (additionalFields.depth !== undefined) body.depth = additionalFields.depth;
-
-					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
-						method: 'POST',
-						baseURL,
-						url: '/crawl',
-						body,
-						json: true,
-					})) as IDataObject[];
-
+					body.limit = this.getNodeParameter('limit', i) as number;
+					body.return_format = toApiReturnFormat(
+						this.getNodeParameter('returnFormat', i) as string,
+					);
+					const response = await call({ method: 'POST', url: '/crawl', body });
 					const pages = Array.isArray(response) ? response : [response];
-
-					if (outputMode === 'splitItems') {
-						for (const page of pages) {
-							returnData.push({ json: page as IDataObject, pairedItem: { item: i } });
-						}
-					} else {
-						returnData.push({ json: { pages }, pairedItem: { item: i } });
-					}
-
-					// ── Scrape ─────────────────────────────────────────────────────
-				} else if (operation === 'scrape') {
-					const returnFormat = this.getNodeParameter('returnFormat', i) as string;
-					body.return_format = returnFormat;
-
-					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
-						method: 'POST',
-						baseURL,
-						url: '/scrape',
-						body,
-						json: true,
-					})) as IDataObject[];
-
-					const pages = Array.isArray(response) ? response : [response];
-					returnData.push({
-						json: (pages[0] ?? response) as IDataObject,
-						pairedItem: { item: i },
-					});
-
-					// ── Links ──────────────────────────────────────────────────────
+					pushResults(pages, this.getNodeParameter('outputMode', i) as string, 'pages', i);
 				} else if (operation === 'links') {
-					const outputMode = this.getNodeParameter('outputMode', i) as string;
-
-					if (additionalFields.depth !== undefined) body.depth = additionalFields.depth;
-
-					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
-						method: 'POST',
-						baseURL,
-						url: '/links',
-						body,
-						json: true,
-					})) as IDataObject[];
-
+					const response = await call({ method: 'POST', url: '/links', body });
 					const results = Array.isArray(response) ? response : [response];
-
-					if (outputMode === 'splitItems') {
-						for (const result of results) {
-							returnData.push({ json: result as IDataObject, pairedItem: { item: i } });
-						}
-					} else {
-						returnData.push({ json: { results }, pairedItem: { item: i } });
-					}
-
-					// ── Screenshot ─────────────────────────────────────────────────
+					pushResults(results, this.getNodeParameter('outputMode', i) as string, 'results', i);
+				} else if (operation === 'scrape' || operation === 'transform') {
+					// Version 1 "Transform" took a URL. /transform fetches nothing, so a
+					// version 1 Transform is a scrape in the chosen format.
+					body.return_format = toApiReturnFormat(
+						this.getNodeParameter('returnFormat', i) as string,
+					);
+					const response = await call({ method: 'POST', url: '/scrape', body });
+					const pages = Array.isArray(response) ? response : [response];
+					returnData.push({ json: pages[0] ?? {}, pairedItem: { item: i } });
 				} else if (operation === 'screenshot') {
-					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
-						method: 'POST',
-						baseURL,
-						url: '/screenshot',
-						body,
-						json: true,
-					})) as IDataObject[];
-
+					if (additionalFields.full_page !== undefined) body.full_page = additionalFields.full_page;
+					const response = await call({ method: 'POST', url: '/screenshot', body });
 					const results = Array.isArray(response) ? response : [response];
-					returnData.push({
-						json: (results[0] ?? response) as IDataObject,
-						pairedItem: { item: i },
-					});
-
-					// ── Transform ──────────────────────────────────────────────────
-				} else if (operation === 'transform') {
-					const returnFormat = this.getNodeParameter('returnFormat', i) as string;
-					body.return_format = returnFormat;
-
-					const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'spiderApi', {
-						method: 'POST',
-						baseURL,
-						url: '/transform',
-						body,
-						json: true,
-					})) as IDataObject[];
-
-					const results = Array.isArray(response) ? response : [response];
-					returnData.push({
-						json: (results[0] ?? response) as IDataObject,
-						pairedItem: { item: i },
-					});
+					const result = results[0] ?? {};
+					const item: INodeExecutionData = { json: result, pairedItem: { item: i } };
+					if (typeof result.content === 'string' && result.content.length > 0) {
+						item.binary = {
+							data: await this.helpers.prepareBinaryData(
+								Buffer.from(result.content, 'base64'),
+								'screenshot.png',
+								'image/png',
+							),
+						};
+					}
+					returnData.push(item);
 				}
 			} catch (error) {
 				if (this.continueOnFail()) {

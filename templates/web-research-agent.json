@@ -1,0 +1,145 @@
+{
+	"name": "Research agent that searches and reads the web with Spider",
+	"nodes": [
+		{
+			"parameters": {
+				"content": "## Web research agent\n1. Add a Spider API credential (key from https://spider.cloud/api-keys).\n2. Add an OpenAI credential to **Chat model**.\n3. Open the chat and ask a question.\n\nThe agent calls **Search the web** to find sources, then **Read a page** for the ones worth reading, and answers with links.",
+				"width": 480,
+				"height": 260
+			},
+			"name": "Setup",
+			"type": "n8n-nodes-base.stickyNote",
+			"typeVersion": 1,
+			"position": [-60, -300]
+		},
+		{
+			"parameters": {
+				"options": {}
+			},
+			"name": "Chat",
+			"type": "@n8n/n8n-nodes-langchain.chatTrigger",
+			"typeVersion": 1.1,
+			"position": [0, 100]
+		},
+		{
+			"parameters": {
+				"options": {
+					"systemMessage": "You are a research assistant. For each question, search the web, read the two or three most relevant pages, and answer in a few short paragraphs. Cite every claim with the page URL. Say so when sources disagree or when you found nothing."
+				}
+			},
+			"name": "Research agent",
+			"type": "@n8n/n8n-nodes-langchain.agent",
+			"typeVersion": 1.7,
+			"position": [240, 100]
+		},
+		{
+			"parameters": {
+				"model": "gpt-4o-mini",
+				"options": {}
+			},
+			"name": "Chat model",
+			"type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+			"typeVersion": 1,
+			"position": [100, 340]
+		},
+		{
+			"parameters": {},
+			"name": "Memory",
+			"type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+			"typeVersion": 1.3,
+			"position": [260, 340]
+		},
+		{
+			"parameters": {
+				"resource": "web",
+				"operation": "search",
+				"query": "={{ $fromAI('query', 'A web search query', 'string') }}",
+				"num": 5,
+				"returnFormat": "markdown",
+				"outputMode": "allItems",
+				"additionalFields": {}
+			},
+			"name": "Search the web",
+			"type": "@spider-cloud/n8n-nodes-spider.spiderTool",
+			"typeVersion": 2,
+			"position": [420, 340]
+		},
+		{
+			"parameters": {
+				"resource": "page",
+				"operation": "scrape",
+				"url": "={{ $fromAI('url', 'The full URL of the page to read', 'string') }}",
+				"returnFormat": "markdown",
+				"additionalFields": {
+					"filter_output_main_only": true,
+					"readability": true
+				}
+			},
+			"name": "Read a page",
+			"type": "@spider-cloud/n8n-nodes-spider.spiderTool",
+			"typeVersion": 2,
+			"position": [580, 340]
+		}
+	],
+	"connections": {
+		"Chat": {
+			"main": [
+				[
+					{
+						"node": "Research agent",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Chat model": {
+			"ai_languageModel": [
+				[
+					{
+						"node": "Research agent",
+						"type": "ai_languageModel",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Memory": {
+			"ai_memory": [
+				[
+					{
+						"node": "Research agent",
+						"type": "ai_memory",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Search the web": {
+			"ai_tool": [
+				[
+					{
+						"node": "Research agent",
+						"type": "ai_tool",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Read a page": {
+			"ai_tool": [
+				[
+					{
+						"node": "Research agent",
+						"type": "ai_tool",
+						"index": 0
+					}
+				]
+			]
+		}
+	},
+	"settings": {
+		"executionOrder": "v1"
+	},
+	"pinData": {}
+}

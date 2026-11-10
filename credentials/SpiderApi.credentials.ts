@@ -10,9 +10,9 @@ export class SpiderApi implements ICredentialType {
 
 	displayName = 'Spider API';
 
-	icon = 'file:spider.svg' as const;
+	icon = { light: 'file:spider.svg', dark: 'file:spider.dark.svg' } as const;
 
-	documentationUrl = 'https://spider.cloud/docs/api';
+	documentationUrl = 'https://spider.cloud/docs/api/';
 
 	properties: INodeProperties[] = [
 		{
@@ -22,7 +22,7 @@ export class SpiderApi implements ICredentialType {
 			typeOptions: { password: true },
 			default: '',
 			required: true,
-			description: 'Get your API key at https://spider.cloud/api-keys',
+			description: 'Create a key at https://spider.cloud/api-keys',
 		},
 	];
 

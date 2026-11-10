@@ -1,0 +1,141 @@
+{
+	"name": "Track competitor pricing pages daily in Google Sheets using Spider",
+	"nodes": [
+		{
+			"parameters": {
+				"content": "## Daily competitor price check\n1. Add a Spider API credential (key from https://spider.cloud/api-keys).\n2. Edit the list in **Pages to check**.\n3. Pick your spreadsheet and sheet in **Append to sheet**. Give the sheet the columns date, competitor, url, status, prices.\n\n'Main Content Only' drops navigation and footers so prices from menus do not leak in. Turn on 'Stealth' on **Scrape pricing page** for a site that blocks plain requests.",
+				"width": 520,
+				"height": 280
+			},
+			"name": "Setup",
+			"type": "n8n-nodes-base.stickyNote",
+			"typeVersion": 1,
+			"position": [-60, -300]
+		},
+		{
+			"parameters": {
+				"rule": {
+					"interval": [
+						{
+							"triggerAtHour": 8
+						}
+					]
+				}
+			},
+			"name": "Every morning",
+			"type": "n8n-nodes-base.scheduleTrigger",
+			"typeVersion": 1.2,
+			"position": [0, 100]
+		},
+		{
+			"parameters": {
+				"jsCode": "// One item per page to check. Edit this list.\nreturn [\n  { json: { competitor: 'Example A', url: 'https://example.com/pricing' } },\n  { json: { competitor: 'Example B', url: 'https://example.org/pricing' } },\n];"
+			},
+			"name": "Pages to check",
+			"type": "n8n-nodes-base.code",
+			"typeVersion": 2,
+			"position": [220, 100]
+		},
+		{
+			"parameters": {
+				"resource": "page",
+				"operation": "scrape",
+				"url": "={{ $json.url }}",
+				"returnFormat": "markdown",
+				"additionalFields": {
+					"filter_output_main_only": true,
+					"request": "smart"
+				}
+			},
+			"name": "Scrape pricing page",
+			"type": "@spider-cloud/n8n-nodes-spider.spider",
+			"typeVersion": 2,
+			"position": [440, 100]
+		},
+		{
+			"parameters": {
+				"jsCode": "// Pull price-like strings out of each page's markdown.\nconst pricePattern = /(?:[$\\u20ac\\u00a3]\\s?\\d[\\d,]*(?:\\.\\d{1,2})?)(?:\\s?(?:\\/|per)\\s?(?:mo|month|yr|year|user|seat))?/gi;\nreturn $input.all().map((item, index) => {\n  const source = $('Pages to check').all()[index]?.json ?? {};\n  const markdown = item.json.content ?? '';\n  const prices = [...new Set(markdown.match(pricePattern) ?? [])].slice(0, 10);\n  return {\n    json: {\n      date: new Date().toISOString().slice(0, 10),\n      competitor: source.competitor,\n      url: item.json.url ?? source.url,\n      status: item.json.status,\n      prices: prices.join(' | '),\n    },\n  };\n});"
+			},
+			"name": "Extract prices",
+			"type": "n8n-nodes-base.code",
+			"typeVersion": 2,
+			"position": [660, 100]
+		},
+		{
+			"parameters": {
+				"operation": "append",
+				"documentId": {
+					"__rl": true,
+					"mode": "list",
+					"value": ""
+				},
+				"sheetName": {
+					"__rl": true,
+					"mode": "list",
+					"value": ""
+				},
+				"columns": {
+					"mappingMode": "autoMapInputData",
+					"value": {},
+					"matchingColumns": [],
+					"schema": []
+				},
+				"options": {}
+			},
+			"name": "Append to sheet",
+			"type": "n8n-nodes-base.googleSheets",
+			"typeVersion": 4.5,
+			"position": [880, 100]
+		}
+	],
+	"connections": {
+		"Every morning": {
+			"main": [
+				[
+					{
+						"node": "Pages to check",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Pages to check": {
+			"main": [
+				[
+					{
+						"node": "Scrape pricing page",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Scrape pricing page": {
+			"main": [
+				[
+					{
+						"node": "Extract prices",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Extract prices": {
+			"main": [
+				[
+					{
+						"node": "Append to sheet",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		}
+	},
+	"settings": {
+		"executionOrder": "v1"
+	},
+	"pinData": {}
+}
