@@ -25,7 +25,7 @@ In n8n, open **Settings > Community Nodes**, select **Install**, and enter `@spi
 
 The node needs a Spider API key.
 
-1. Create an account at [spider.cloud](https://spider.cloud/?utm_source=n8n&utm_medium=community_node&utm_campaign=n8n-nodes-spider). New accounts can test with 2,500 free credits, worth $0.25, if the signup passes Spider's checks ([FAQ](https://spider.cloud/faq/?utm_source=n8n&utm_medium=community_node&utm_campaign=n8n-nodes-spider)).
+1. Create an account at [spider.cloud](https://spider.cloud/?utm_source=n8n&utm_medium=community_node&utm_campaign=n8n-nodes-spider). New accounts may get free credits to test with, if the signup passes Spider's checks ([FAQ](https://spider.cloud/faq/?utm_source=n8n&utm_medium=community_node&utm_campaign=n8n-nodes-spider)).
 2. Create a key at [spider.cloud/api-keys](https://spider.cloud/api-keys?utm_source=n8n&utm_medium=community_node&utm_campaign=n8n-nodes-spider).
 3. In n8n, add a **Spider API** credential and paste the key.
 
